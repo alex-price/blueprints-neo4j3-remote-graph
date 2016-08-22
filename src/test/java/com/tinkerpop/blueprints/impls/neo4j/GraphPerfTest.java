@@ -3,37 +3,68 @@ package com.tinkerpop.blueprints.impls.neo4j;
 import com.tinkerpop.blueprints.*;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
-import org.junit.Before;
-import org.junit.Rule;
+import org.junit.Assert;
+import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
-import org.neo4j.dbms.DatabaseManagementSystemSettings;
+import org.neo4j.driver.v1.Value;
 import org.neo4j.harness.junit.Neo4jRule;
 
-import java.io.File;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 
 public class GraphPerfTest {
 
     private static TransactionalGraph graphDb;
 
-    @Rule
-    public final Neo4jRule remoteDb = new Neo4jRule().withConfig("auth_enabled", "true");
+    @ClassRule
+    public static final Neo4jRule remoteDb = new Neo4jRule().withConfig("auth_enabled", "true");
 
-    @Before
-    public void createNeo4jConnection() throws Exception {
-        // The strategy TRUST_ON_FIRST_USE doesn't work on subsequent executions,
-        // reference that generated key instead.
-        File dataDirectory = remoteDb.getConfig().get(DatabaseManagementSystemSettings.data_directory);
-        File certFile = new File(dataDirectory, "databases/graph.db/certificates/neo4j.cert");
-
+    @BeforeClass
+    public static void createNeo4jConnection() throws Exception {
         Configuration config = new PropertiesConfiguration();
         config.setProperty("blueprints.graph", "com.tinkerpop.blueprints.impls.neo4j.Neo4jGraph");
         config.setProperty("blueprints.neo4j.url", remoteDb.boltURI().toString());
-        config.setProperty("blueprints.neo4j.certFile", certFile.toString());
-
+        config.setProperty("blueprints.neo4j.certFile", TestUtil.defaultCertFile(remoteDb.getConfig()).toString());
         graphDb = (TransactionalGraph) GraphFactory.open(config);
+    }
+
+    @Test
+    public void sanityCheck() {
+        Vertex v1 = graphDb.addVertex(null);
+        Assert.assertNotNull(v1.getId());
+
+        // Add Property
+        v1.setProperty("k1", "k1v1");
+        Value k1v1 = v1.getProperty("k1");
+        Assert.assertEquals("k1v1", k1v1.asString());
+
+        // Update Property
+        v1.setProperty("k1", "k1v2");
+        Value k1v2 = v1.getProperty("k1");
+        Assert.assertEquals("k1v2", k1v2.asString());
+
+        // Property Keys
+        v1.setProperty("k2", "k2v");
+        v1.setProperty("k3", "k3v");
+        Set actualKeys = v1.getPropertyKeys();
+        Set expectedKeys = new HashSet<>(Arrays.asList("k1", "k2", "k3"));
+        Assert.assertEquals(expectedKeys, actualKeys);
+
+        // Delete Property
+        Value k2v = v1.removeProperty("k2");
+        Assert.assertEquals("k2v", k2v.asString());
+        Assert.assertTrue(((Value) v1.getProperty("k2")).isNull());
+
+        // Add Edge
+        Vertex v2 = graphDb.addVertex(null);
+        Edge e1 = v1.addEdge("CONNECTS_TO", v2);
+        Assert.assertEquals(v1.getId(), e1.getVertex(Direction.IN).getId());
+        Assert.assertEquals(v2.getId(), e1.getVertex(Direction.OUT).getId());
+        Assert.assertEquals("CONNECTS_TO", e1.getLabel());
+
+        // Delete Vertex
+        v1.remove();
+        Assert.assertNull(graphDb.getVertex(v1.getId()));
     }
 
     @Test

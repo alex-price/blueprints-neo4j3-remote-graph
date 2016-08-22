@@ -9,9 +9,7 @@ import org.neo4j.driver.v1.Value;
 import org.neo4j.driver.v1.Values;
 import org.neo4j.driver.v1.types.Relationship;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public class Neo4jEdge extends Neo4jElement<Relationship> implements Edge {
 
@@ -29,23 +27,33 @@ public class Neo4jEdge extends Neo4jElement<Relationship> implements Edge {
         // Oracle impl is probably bugged too !!!
         String statement = "match (a)-[r]->(b) where id(r) = {id} return " + (direction == Direction.IN ? "a" : "b");
         Value params = Values.parameters("id", getId());
-        StatementResult result = graphDb.defaultTx().run(statement, params);
+        StatementResult result = graphDb.withTx().run(statement, params);
         return new Neo4jVertex(result.single().get(0).asNode(), graphDb);
     }
 
     @Override
     public String getLabel() {
-        throw new UnsupportedOperationException();
+        Value params = Values.parameters("id", getId());
+        StatementResult result = graphDb.withTx().run("match ()-[r]-() where id(r) = {id} with distinct r return type(r)", params);
+        if (result.hasNext()) {
+            return result.single().get(0).asString();
+        }
+        return null;
     }
 
     @Override
     public <T> T getProperty(String key) {
-        throw new UnsupportedOperationException();
+        Value params = Values.parameters("id", getId(), "key", key);
+        StatementResult result = graphDb.withTx().run("match ()-[r]->() where id(r) = {id} return r[{key}]", params);
+        return (T) result.single().get(0);
     }
 
     @Override
     public Set<String> getPropertyKeys() {
-        throw new UnsupportedOperationException();
+        Value params = Values.parameters("id", getId());
+        StatementResult result = graphDb.withTx().run("match ()-[r]->() where id(r) = {id} return keys(r)", params);
+        List<String> asList = result.list(record -> record.get(0).asString());
+        return new HashSet(asList);
     }
 
     @Override
@@ -53,17 +61,19 @@ public class Neo4jEdge extends Neo4jElement<Relationship> implements Edge {
         Map<String, Object> props = new HashMap<>();
         props.put(key, value);
         Value params = Values.parameters("id", rawElement.id(), "props", Values.value(props));
-        graphDb.defaultTx().run("match ()-[r]->() where id(r) = {id} set r += {props}", params);
+        graphDb.withTx().run("match ()-[r]->() where id(r) = {id} set r += {props}", params);
     }
 
     @Override
     public <T> T removeProperty(String key) {
-        throw new UnsupportedOperationException();
+        Value params = Values.parameters("id", getId(), "key", key);
+        StatementResult result = graphDb.withTx().run("match ()-[r]-() where id(r) = {id} remove r[{key}] return r[{key}]", params);
+        return (T) result.single().get(0);
     }
 
     @Override
     public void remove() {
-        throw new UnsupportedOperationException();
+        graphDb.removeEdge(this);
     }
 
 }

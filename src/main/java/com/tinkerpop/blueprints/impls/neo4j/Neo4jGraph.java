@@ -1,6 +1,8 @@
 package com.tinkerpop.blueprints.impls.neo4j;
 
 import com.tinkerpop.blueprints.*;
+import com.tinkerpop.blueprints.impls.neo4j.iterable.EdgeIterable;
+import com.tinkerpop.blueprints.impls.neo4j.iterable.VertexIterable;
 import com.tinkerpop.blueprints.util.ExceptionFactory;
 import org.apache.commons.configuration.Configuration;
 import org.neo4j.driver.v1.*;
@@ -10,10 +12,9 @@ import org.neo4j.driver.v1.types.Relationship;
 
 import java.io.File;
 import java.nio.file.Paths;
-import java.util.Set;
 import java.util.logging.Logger;
 
-public class Neo4jGraph implements IndexableGraph, KeyIndexableGraph, MetaGraph<Session>, TransactionalGraph {
+public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
 
     private static final Logger logger = Logger.getLogger(Neo4jGraph.class.getName());
 
@@ -41,10 +42,10 @@ public class Neo4jGraph implements IndexableGraph, KeyIndexableGraph, MetaGraph<
         FEATURES.supportsEdgeIndex = true;
         FEATURES.ignoresSuppliedIds = true;
         FEATURES.supportsTransactions = true;
-        FEATURES.supportsIndices = true;
-        FEATURES.supportsKeyIndices = true;
-        FEATURES.supportsVertexKeyIndex = true;
-        FEATURES.supportsEdgeKeyIndex = true;
+        FEATURES.supportsIndices = false;
+        FEATURES.supportsKeyIndices = false;
+        FEATURES.supportsVertexKeyIndex = false;
+        FEATURES.supportsEdgeKeyIndex = false;
         FEATURES.supportsEdgeRetrieval = true;
         FEATURES.supportsVertexProperties = true;
         FEATURES.supportsEdgeProperties = true;
@@ -77,7 +78,7 @@ public class Neo4jGraph implements IndexableGraph, KeyIndexableGraph, MetaGraph<
     private VertexWrapper<? extends Vertex> vertexWrapper;
     private EdgeWrapper<? extends Edge> edgeWrapper;
 
-    protected Transaction defaultTx() {
+    public Transaction withTx() {
         if (tx.get() == null) {
             tx.set(session.get().beginTransaction());
         }
@@ -127,43 +128,6 @@ public class Neo4jGraph implements IndexableGraph, KeyIndexableGraph, MetaGraph<
         this.edgeWrapper = edgeWrapper;
     }
 
-    // IndexableGraph
-
-    @Override
-    public <T extends Element> Index<T> createIndex(String indexName, Class<T> indexClass, Parameter... indexParameters) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public <T extends Element> Index<T> getIndex(String indexName, Class<T> indexClass) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Iterable<Index<? extends Element>> getIndices() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void dropIndex(String indexName) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public <T extends Element> void dropKeyIndex(String key, Class<T> elementClass) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public <T extends Element> void createKeyIndex(String key, Class<T> elementClass, Parameter... indexParameters) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public <T extends Element> Set<String> getIndexedKeys(Class<T> elementClass) {
-        throw new UnsupportedOperationException();
-    }
-
     @Override
     public Session getRawGraph() {
         return session.get();
@@ -211,7 +175,7 @@ public class Neo4jGraph implements IndexableGraph, KeyIndexableGraph, MetaGraph<
 
     @Override
     public Vertex addVertex(Object id) {
-        StatementResult result = defaultTx().run("create (n) return n");
+        StatementResult result = withTx().run("create (n) return n");
         Node node = result.single().get(0).asNode();
         return new Neo4jVertex(node, this);
     }
@@ -221,24 +185,30 @@ public class Neo4jGraph implements IndexableGraph, KeyIndexableGraph, MetaGraph<
         if (null == id) {
             throw ExceptionFactory.vertexIdCanNotBeNull();
         }
-        StatementResult result = defaultTx().run("match (n) where id(n) = {id} return n", Values.parameters("id", id));
-        Node node = result.single().get(0).asNode();
-        return new Neo4jVertex(node, this);
+        StatementResult result = withTx().run("match (n) where id(n) = {id} return n", Values.parameters("id", id));
+        if (result.hasNext()) {
+            Node node = result.single().get(0).asNode();
+            return new Neo4jVertex(node, this);
+        }
+        return null;
     }
 
     @Override
     public void removeVertex(Vertex vertex) {
-        defaultTx().run("match (n) where id(n) = {id} detach delete n", Values.parameters("id", vertex.getId()));
+        withTx().run("match (n) where id(n) = {id} detach delete n", Values.parameters("id", vertex.getId()));
     }
 
     @Override
     public Iterable<Vertex> getVertices() {
-        throw new UnsupportedOperationException();
+        StatementResult result = withTx().run("match (n) return n");
+        return new VertexIterable(result.list(record -> record.get(0).asNode()), this);
     }
 
     @Override
     public Iterable<Vertex> getVertices(String key, Object value) {
-        throw new UnsupportedOperationException();
+        Value params = Values.parameters("key", key, "value", value);
+        StatementResult result = withTx().run("match (n) where n[{key}] = {value}", params);
+        return new VertexIterable(result.list(record -> record.get(0).asNode()), this);
     }
 
     @Override
@@ -246,30 +216,38 @@ public class Neo4jGraph implements IndexableGraph, KeyIndexableGraph, MetaGraph<
         if (label == null) {
             throw ExceptionFactory.edgeLabelCanNotBeNull();
         }
+        String statement = String.format("match (a), (b) where id(a) = {ida} and id(b) = {idb} create (a)-[r:`%s`]->(b) return r", label);
         Value params = Values.parameters("ida", outVertex.getId(), "idb", inVertex.getId());
-        StatementResult result = defaultTx().run("match (a), (b) where id(a) = {ida} and id(b) = {idb} create (a)-[r:`" + label + "`]->(b) return r", params);
+        StatementResult result = withTx().run(statement, params);
         Relationship rel = result.single().get(0).asRelationship();
         return new Neo4jEdge(rel, this);
     }
 
     @Override
     public Edge getEdge(Object id) {
-        throw new UnsupportedOperationException();
+        StatementResult result = withTx().run("match ()-[r]-() where id(r) = {id} return r", Values.parameters("id", id));
+        if (result.hasNext()) {
+            result.single().get(0).asRelationship();
+        }
+        return null;
     }
 
     @Override
     public void removeEdge(Edge edge) {
-        throw new UnsupportedOperationException();
+        withTx().run("match ()-[r]-() where id(r) = {id} delete r", Values.parameters("id", edge.getId()));
     }
 
     @Override
     public Iterable<Edge> getEdges() {
-        throw new UnsupportedOperationException();
+        StatementResult result = withTx().run("match ()-[r]-() return r");
+        return new EdgeIterable(result.list(record -> record.get(0).asRelationship()), this);
     }
 
     @Override
     public Iterable<Edge> getEdges(String key, Object value) {
-        throw new UnsupportedOperationException();
+        Value params = Values.parameters("key", key, "value", value);
+        StatementResult result = withTx().run("match ()-[r]-() where r[{key}] = {value} return r", params);
+        return new EdgeIterable(result.list(record -> record.get(0).asRelationship()), this);
     }
 
     @Override

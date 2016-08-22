@@ -18,4 +18,8 @@ public abstract class Neo4jElement<S extends Entity> implements Element {
         return rawElement.id();
     }
 
+    public S getRawElement() {
+        return this.rawElement;
+    }
+
 }
