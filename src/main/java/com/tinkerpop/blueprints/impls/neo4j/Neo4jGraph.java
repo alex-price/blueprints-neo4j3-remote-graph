@@ -12,6 +12,7 @@ import org.neo4j.driver.v1.types.Relationship;
 
 import java.io.File;
 import java.nio.file.Paths;
+import java.util.Optional;
 import java.util.logging.Logger;
 
 public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
@@ -72,15 +73,15 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
 
     protected Configuration config;
     protected final Driver driver;
-    protected ThreadLocal<Session> session;
-    protected ThreadLocal<Transaction> tx = new ThreadLocal();
+    protected Session session;
+    protected Optional<Transaction> tx = Optional.empty();
 
     private VertexWrapper<? extends Vertex> vertexWrapper;
     private EdgeWrapper<? extends Edge> edgeWrapper;
 
     public Transaction withTx() {
-        if (tx.get() == null) {
-            tx.set(session.get().beginTransaction());
+        if (!tx.isPresent()) {
+            tx = Optional.of(session.beginTransaction());
         }
         return tx.get();
     }
@@ -106,7 +107,7 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
         AuthToken authToken = AuthTokens.basic(username, password);
 
         driver = GraphDatabase.driver(url, authToken, neo4jConfig.toConfig());
-        session = ThreadLocal.withInitial(driver::session);
+        session = driver.session();
 
         vertexWrapper = createDefaultVertexWrapper(this);
         edgeWrapper = createDefaultEdgeWrapper(this);
@@ -130,7 +131,7 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
 
     @Override
     public Session getRawGraph() {
-        return session.get();
+        return session;
     }
 
     // TransactionalGraph
@@ -142,30 +143,14 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
 
     @Override
     public void commit() {
-        if (tx.get() == null) {
-            return;
-        }
-
-        try {
-            tx.get().success();
-        } finally {
-            tx.get().close();
-            tx.remove();
-        }
+        tx.ifPresent(tx -> { tx.success(); tx.close(); });
+        tx = Optional.empty();
     }
 
     @Override
     public void rollback() {
-        if (tx.get() == null) {
-            return;
-        }
-
-        try {
-            tx.get().failure();
-        } finally {
-            tx.get().close();
-            tx.remove();
-        }
+        tx.ifPresent(tx -> { tx.failure(); tx.close(); });
+        tx = Optional.empty();
     }
 
     @Override
@@ -206,8 +191,9 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
 
     @Override
     public Iterable<Vertex> getVertices(String key, Object value) {
-        Value params = Values.parameters("key", key, "value", value);
-        StatementResult result = withTx().run("match (n) where n[{key}] = {value}", params);
+        String statement = String.format("match (n) where n.`%s` = {value}", key);
+        Value params = Values.parameters("value", value);
+        StatementResult result = withTx().run(statement, params);
         return new VertexIterable(result.list(record -> record.get(0).asNode()), this);
     }
 
@@ -225,7 +211,7 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
 
     @Override
     public Edge getEdge(Object id) {
-        StatementResult result = withTx().run("match ()-[r]-() where id(r) = {id} return r", Values.parameters("id", id));
+        StatementResult result = withTx().run("match ()-[r]->() where id(r) = {id} return r", Values.parameters("id", id));
         if (result.hasNext()) {
             result.single().get(0).asRelationship();
         }
@@ -245,8 +231,9 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
 
     @Override
     public Iterable<Edge> getEdges(String key, Object value) {
-        Value params = Values.parameters("key", key, "value", value);
-        StatementResult result = withTx().run("match ()-[r]-() where r[{key}] = {value} return r", params);
+        String statement = String.format("match ()-[r]-() where r.`%s` = {value} return r", key);
+        Value params = Values.parameters("value", value);
+        StatementResult result = withTx().run(statement, params);
         return new EdgeIterable(result.list(record -> record.get(0).asRelationship()), this);
     }
 
@@ -257,13 +244,8 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
 
     @Override
     public void shutdown() {
-        Transaction openTx = tx.get();
-        if (openTx != null) {
-            openTx.success();
-            openTx.close();
-
-        }
-        session.get().close();
+        commit();
+        session.close();
         driver.close();
     }
 

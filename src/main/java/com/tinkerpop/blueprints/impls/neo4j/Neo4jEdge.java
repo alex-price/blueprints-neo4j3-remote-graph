@@ -9,7 +9,9 @@ import org.neo4j.driver.v1.Value;
 import org.neo4j.driver.v1.Values;
 import org.neo4j.driver.v1.types.Relationship;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class Neo4jEdge extends Neo4jElement<Relationship> implements Edge {
 
@@ -58,16 +60,16 @@ public class Neo4jEdge extends Neo4jElement<Relationship> implements Edge {
 
     @Override
     public void setProperty(String key, Object value) {
-        Map<String, Object> props = new HashMap<>();
-        props.put(key, value);
-        Value params = Values.parameters("id", rawElement.id(), "props", Values.value(props));
-        graphDb.withTx().run("match ()-[r]->() where id(r) = {id} set r += {props}", params);
+        String statement = String.format("match ()-[r]->() where id(r) = {id} set r.`%s` = {value}", key);
+        Value params = Values.parameters("id", getId(), "value", value);
+        graphDb.withTx().run(statement, params);
     }
 
     @Override
     public <T> T removeProperty(String key) {
-        Value params = Values.parameters("id", getId(), "key", key);
-        StatementResult result = graphDb.withTx().run("match ()-[r]-() where id(r) = {id} remove r[{key}] return r[{key}]", params);
+        String statement = String.format("match ()-[r]->() where id(r) = {id} with r, r.`%s` as propValue remove r.`%s` return propValue", key, key);
+        Value params = Values.parameters("id", getId());
+        StatementResult result = graphDb.withTx().run(statement, params);
         return (T) result.single().get(0);
     }
 

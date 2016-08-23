@@ -62,6 +62,16 @@ public class GraphPerfTest {
         Assert.assertEquals(v2.getId(), e1.getVertex(Direction.OUT).getId());
         Assert.assertEquals("CONNECTS_TO", e1.getLabel());
 
+        // Add-Update Edge Property
+        e1.setProperty("k1", "k1v1");
+        Assert.assertEquals("k1v1", ((Value) e1.getProperty("k1")).asString());
+        e1.setProperty("k1", "k1v2");
+        Assert.assertEquals("k1v2", ((Value) e1.getProperty("k1")).asString());
+
+        // Remove Edge Property
+        Assert.assertEquals("k1v2", ((Value) e1.removeProperty("k1")).asString());
+        Assert.assertTrue(((Value) e1.getProperty("k1")).isNull());
+
         // Delete Vertex
         v1.remove();
         Assert.assertNull(graphDb.getVertex(v1.getId()));
