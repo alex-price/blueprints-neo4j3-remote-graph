@@ -3,15 +3,12 @@ package com.tinkerpop.blueprints.impls.neo4j;
 import com.tinkerpop.blueprints.Direction;
 import com.tinkerpop.blueprints.Edge;
 import com.tinkerpop.blueprints.Vertex;
+import com.tinkerpop.blueprints.util.ElementHelper;
 import com.tinkerpop.blueprints.util.ExceptionFactory;
 import org.neo4j.driver.v1.StatementResult;
 import org.neo4j.driver.v1.Value;
 import org.neo4j.driver.v1.Values;
 import org.neo4j.driver.v1.types.Relationship;
-
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 
 public class Neo4jEdge extends Neo4jElement<Relationship> implements Edge {
 
@@ -35,42 +32,29 @@ public class Neo4jEdge extends Neo4jElement<Relationship> implements Edge {
 
     @Override
     public String getLabel() {
-        Value params = Values.parameters("id", getId());
-        StatementResult result = graphDb.withTx().run("match ()-[r]-() where id(r) = {id} with distinct r return type(r)", params);
-        if (result.hasNext()) {
-            return result.single().get(0).asString();
-        }
-        return null;
-    }
-
-    @Override
-    public <T> T getProperty(String key) {
-        Value params = Values.parameters("id", getId(), "key", key);
-        StatementResult result = graphDb.withTx().run("match ()-[r]->() where id(r) = {id} return r[{key}]", params);
-        return (T) result.single().get(0);
-    }
-
-    @Override
-    public Set<String> getPropertyKeys() {
-        Value params = Values.parameters("id", getId());
-        StatementResult result = graphDb.withTx().run("match ()-[r]->() where id(r) = {id} return keys(r)", params);
-        List<String> asList = result.list(record -> record.get(0).asString());
-        return new HashSet(asList);
+        return rawElement.type();
     }
 
     @Override
     public void setProperty(String key, Object value) {
+        ElementHelper.validateProperty(this, key, value);
         String statement = String.format("match ()-[r]->() where id(r) = {id} set r.`%s` = {value}", key);
-        Value params = Values.parameters("id", getId(), "value", value);
+        Value params = Values.parameters("id", getId(), "value", Values.value(value));
         graphDb.withTx().run(statement, params);
+        rawElement = clone(this, key, value);
     }
 
     @Override
-    public <T> T removeProperty(String key) {
+    public Object removeProperty(String key) {
+        Object propValue = null;
         String statement = String.format("match ()-[r]->() where id(r) = {id} with r, r.`%s` as propValue remove r.`%s` return propValue", key, key);
         Value params = Values.parameters("id", getId());
         StatementResult result = graphDb.withTx().run(statement, params);
-        return (T) result.single().get(0);
+        if (result.hasNext()) {
+            propValue = result.single().get(0).asObject();
+            rawElement = clone(this, key);
+        }
+        return propValue;
     }
 
     @Override

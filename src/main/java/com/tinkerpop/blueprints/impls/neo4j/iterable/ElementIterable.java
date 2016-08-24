@@ -8,7 +8,7 @@ import org.neo4j.driver.v1.types.Entity;
 
 import java.util.Iterator;;
 
-public abstract class ElementIterable<T extends Element, S extends Entity>  implements CloseableIterable<T>{
+public abstract class ElementIterable<T extends Element, S extends Entity> implements CloseableIterable<T> {
 
     protected final Iterable<S> elements;
     protected final Neo4jGraph graphDb;

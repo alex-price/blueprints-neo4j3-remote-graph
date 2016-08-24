@@ -3,6 +3,7 @@ package com.tinkerpop.blueprints.impls.neo4j;
 import com.tinkerpop.blueprints.*;
 import com.tinkerpop.blueprints.impls.neo4j.iterable.EdgeIterable;
 import com.tinkerpop.blueprints.impls.neo4j.iterable.VertexIterable;
+import com.tinkerpop.blueprints.util.DefaultGraphQuery;
 import com.tinkerpop.blueprints.util.ExceptionFactory;
 import org.apache.commons.configuration.Configuration;
 import org.neo4j.driver.v1.*;
@@ -12,10 +13,12 @@ import org.neo4j.driver.v1.types.Relationship;
 
 import java.io.File;
 import java.nio.file.Paths;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Logger;
 
-public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
+public class Neo4jGraph implements KeyIndexableGraph, MetaGraph<Session>, TransactionalGraph {
 
     private static final Logger logger = Logger.getLogger(Neo4jGraph.class.getName());
 
@@ -121,17 +124,42 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
         return edgeWrapper;
     }
 
-    public void setVertexWrapper(VertexWrapper<? extends Vertex> vertexWrapper) {
-        this.vertexWrapper = vertexWrapper;
-    }
-
-    public void setEdgeWrapper(EdgeWrapper<? extends Edge> edgeWrapper) {
-        this.edgeWrapper = edgeWrapper;
-    }
-
     @Override
     public Session getRawGraph() {
         return session;
+    }
+
+    // KeyIndexableGraph
+
+    public static final String NODE_GLOBAL_INDEX = "INDEXED";
+
+    private Set<String> indices = new HashSet();
+
+    @Override
+    public <T extends Element> void dropKeyIndex(String key, Class<T> elementClass) {
+        if (Neo4jVertex.class.isAssignableFrom(elementClass)) {
+            String statement = String.format("drop index on :`%s`(`%s`)", NODE_GLOBAL_INDEX, key);
+            session.run(statement);
+            indices.remove(key);
+        } else {
+            throw new UnsupportedOperationException("Cannot drop index for " + elementClass.getName());
+        }
+    }
+
+    @Override
+    public <T extends Element> void createKeyIndex(String key, Class<T> elementClass, Parameter... indexParameters) {
+        if (Neo4jVertex.class.isAssignableFrom(elementClass)) {
+            String statement = String.format("create index on :`%s`(`%s`)", NODE_GLOBAL_INDEX, key);
+            session.run(statement);
+            indices.add(key);
+        } else {
+            throw new UnsupportedOperationException("Cannot create index for " + elementClass.getName());
+        }
+    }
+
+    @Override
+    public <T extends Element> Set<String> getIndexedKeys(Class<T> elementClass) {
+        return indices;
     }
 
     // TransactionalGraph
@@ -160,7 +188,8 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
 
     @Override
     public Vertex addVertex(Object id) {
-        StatementResult result = withTx().run("create (n) return n");
+        String statement = String.format("create (n:`%s`) return n", NODE_GLOBAL_INDEX);
+        StatementResult result = withTx().run(statement);
         Node node = result.single().get(0).asNode();
         return new Neo4jVertex(node, this);
     }
@@ -191,7 +220,7 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
 
     @Override
     public Iterable<Vertex> getVertices(String key, Object value) {
-        String statement = String.format("match (n) where n.`%s` = {value}", key);
+        String statement = String.format("match (n:`%s`) where n.`%s` = {value} return n", NODE_GLOBAL_INDEX, key);
         Value params = Values.parameters("value", value);
         StatementResult result = withTx().run(statement, params);
         return new VertexIterable(result.list(record -> record.get(0).asNode()), this);
@@ -239,14 +268,14 @@ public class Neo4jGraph implements MetaGraph<Session>, TransactionalGraph {
 
     @Override
     public GraphQuery query() {
-        throw new UnsupportedOperationException();
+        return new DefaultGraphQuery(this);
     }
 
     @Override
     public void shutdown() {
         commit();
-        session.close();
-        driver.close();
+//        session.close();
+//        driver.close();
     }
 
 }

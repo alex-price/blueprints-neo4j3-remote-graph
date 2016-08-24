@@ -7,13 +7,11 @@ import com.tinkerpop.blueprints.VertexQuery;
 import com.tinkerpop.blueprints.impls.neo4j.iterable.EdgeIterable;
 import com.tinkerpop.blueprints.impls.neo4j.iterable.VertexIterable;
 import com.tinkerpop.blueprints.util.DefaultVertexQuery;
+import com.tinkerpop.blueprints.util.ElementHelper;
 import org.neo4j.driver.v1.StatementResult;
 import org.neo4j.driver.v1.Value;
 import org.neo4j.driver.v1.Values;
 import org.neo4j.driver.v1.types.Node;
-
-import java.util.HashSet;
-import java.util.Set;
 
 public class Neo4jVertex extends Neo4jElement<Node> implements Vertex {
 
@@ -81,42 +79,25 @@ public class Neo4jVertex extends Neo4jElement<Node> implements Vertex {
     }
 
     @Override
-    public <T> T getProperty(String key) {
-        String statement = String.format("match (n) where id(n) = {id} return n.`%s`", key);
-        Value params = Values.parameters("id", getId());
-        StatementResult result = graphDb.withTx().run(statement, params);
-        if (result.hasNext()) {
-            return (T) result.single().get(0);
-        }
-        return null;
-    }
-
-    @Override
-    public Set<String> getPropertyKeys() {
-        Value params = Values.parameters("id", getId());
-        StatementResult result = graphDb.withTx().run("match (n) where id(n) = {id} return keys(n)", params);
-        if (result.hasNext()) {
-            return new HashSet(result.single().get(0).asList());
-        }
-        return null;
-    }
-
-    @Override
     public void setProperty(String key, Object value) {
+        ElementHelper.validateProperty(this, key, value);
         String statement = String.format("match (n) where id(n) = {id} set n.`%s` = {value}", key);
-        Value params = Values.parameters("id", getId(), "value", value);
+        Value params = Values.parameters("id", getId(), "value", Values.value(value));
         graphDb.withTx().run(statement, params);
+        rawElement = clone(this, key, value);
     }
 
     @Override
-    public <T> T removeProperty(String key) {
+    public Object removeProperty(String key) {
+        Object propValue = null;
         Value params = Values.parameters("id", getId());
         String statement = String.format("match (n) where id(n) = {id} with n, n.`%s` as propValue remove n.`%s` return propValue", key, key);
         StatementResult result = graphDb.withTx().run(statement, params);
         if (result.hasNext()) {
-            return (T) result.single().get(0);
+            propValue = result.single().get(0).asObject();
+            rawElement = clone(this, key);
         }
-        return null;
+        return propValue;
     }
 
     @Override

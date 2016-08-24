@@ -7,14 +7,13 @@ import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.Test;
-import org.neo4j.driver.v1.Value;
 import org.neo4j.harness.junit.Neo4jRule;
 
 import java.util.*;
 
 public class GraphPerfTest {
 
-    private static TransactionalGraph graphDb;
+    private static Neo4jGraph graphDb;
 
     @ClassRule
     public static final Neo4jRule remoteDb = new Neo4jRule().withConfig("auth_enabled", "true");
@@ -25,56 +24,94 @@ public class GraphPerfTest {
         config.setProperty("blueprints.graph", "com.tinkerpop.blueprints.impls.neo4j.Neo4jGraph");
         config.setProperty("blueprints.neo4j.url", remoteDb.boltURI().toString());
         config.setProperty("blueprints.neo4j.certFile", TestUtil.defaultCertFile(remoteDb.getConfig()).toString());
-        graphDb = (TransactionalGraph) GraphFactory.open(config);
+        graphDb = (Neo4jGraph) GraphFactory.open(config);
+    }
+
+    @Test
+    public void queryTest() {
+        try {
+            graphDb.createKeyIndex("k1", Neo4jVertex.class);
+
+            Vertex v1 = graphDb.addVertex(null);
+            v1.setProperty("k1", "k1v1");
+            Vertex v2 = graphDb.addVertex(null);
+            v2.setProperty("k1", "k1v2");
+            Vertex v3 = graphDb.addVertex(null);
+            v3.setProperty("k1", "k1v1");
+            graphDb.commit();
+
+            Query query = graphDb.query().has("k1", "k1v1");
+            int count = 0;
+
+            for (Vertex v : query.vertices()) {
+                Assert.assertEquals("k1v1", v.getProperty("k1"));
+                count++;
+            }
+
+            Assert.assertEquals(count, 2);
+
+            graphDb.commit();
+        } catch (Exception ex) {
+            graphDb.rollback();
+        }
     }
 
     @Test
     public void sanityCheck() {
-        Vertex v1 = graphDb.addVertex(null);
-        Assert.assertNotNull(v1.getId());
+        try {
+            // Vertex Add
+            Vertex v1 = graphDb.addVertex(null);
+            Assert.assertNotNull(v1.getId());
 
-        // Add Property
-        v1.setProperty("k1", "k1v1");
-        Value k1v1 = v1.getProperty("k1");
-        Assert.assertEquals("k1v1", k1v1.asString());
+            // Vertex Add Property
+            v1.setProperty("k1", "k1v1");
+            Assert.assertEquals("k1v1", v1.getProperty("k1"));
 
-        // Update Property
-        v1.setProperty("k1", "k1v2");
-        Value k1v2 = v1.getProperty("k1");
-        Assert.assertEquals("k1v2", k1v2.asString());
+            // Vertex Update Property
+            v1.setProperty("k1", "k1v2");
+            Assert.assertEquals("k1v2", v1.getProperty("k1"));
 
-        // Property Keys
-        v1.setProperty("k2", "k2v");
-        v1.setProperty("k3", "k3v");
-        Set actualKeys = v1.getPropertyKeys();
-        Set expectedKeys = new HashSet<>(Arrays.asList("k1", "k2", "k3"));
-        Assert.assertEquals(expectedKeys, actualKeys);
+            // Vertex List Properties
+            v1.setProperty("k2", "k2v");
+            v1.setProperty("k3", "k3v");
+            Set actualKeys = v1.getPropertyKeys();
+            Set expectedKeys = new HashSet<>(Arrays.asList("k1", "k2", "k3"));
+            Assert.assertEquals(expectedKeys, actualKeys);
 
-        // Delete Property
-        Value k2v = v1.removeProperty("k2");
-        Assert.assertEquals("k2v", k2v.asString());
-        Assert.assertTrue(((Value) v1.getProperty("k2")).isNull());
+            // Vertex Remove Property
+            String k2v = v1.removeProperty("k2");
+            Assert.assertEquals("k2v", k2v);
+            Assert.assertNull(v1.getProperty("k2"));
 
-        // Add Edge
-        Vertex v2 = graphDb.addVertex(null);
-        Edge e1 = v1.addEdge("CONNECTS_TO", v2);
-        Assert.assertEquals(v1.getId(), e1.getVertex(Direction.IN).getId());
-        Assert.assertEquals(v2.getId(), e1.getVertex(Direction.OUT).getId());
-        Assert.assertEquals("CONNECTS_TO", e1.getLabel());
+            // Edge Add
+            Vertex v2 = graphDb.addVertex(null);
+            Edge e1 = v1.addEdge("CONNECTS_TO", v2);
+            Assert.assertEquals(v1.getId(), e1.getVertex(Direction.IN).getId());
+            Assert.assertEquals(v2.getId(), e1.getVertex(Direction.OUT).getId());
+            Assert.assertEquals("CONNECTS_TO", e1.getLabel());
 
-        // Add-Update Edge Property
-        e1.setProperty("k1", "k1v1");
-        Assert.assertEquals("k1v1", ((Value) e1.getProperty("k1")).asString());
-        e1.setProperty("k1", "k1v2");
-        Assert.assertEquals("k1v2", ((Value) e1.getProperty("k1")).asString());
+            // Edge Add/Update Property
+            e1.setProperty("k1", "k1v1");
+            Assert.assertEquals("k1v1", e1.getProperty("k1"));
+            e1.setProperty("k1", "k1v2");
+            Assert.assertEquals("k1v2", e1.getProperty("k1"));
 
-        // Remove Edge Property
-        Assert.assertEquals("k1v2", ((Value) e1.removeProperty("k1")).asString());
-        Assert.assertTrue(((Value) e1.getProperty("k1")).isNull());
+            // Edge Remove Property
+            Assert.assertEquals("k1v2", e1.removeProperty("k1"));
+            Assert.assertNull(e1.getProperty("k1"));
 
-        // Delete Vertex
-        v1.remove();
-        Assert.assertNull(graphDb.getVertex(v1.getId()));
+            // Edge Remove
+            e1.remove();
+            Assert.assertNull(graphDb.getEdge(e1.getId()));
+
+            // Vertex Remove
+            v1.remove();
+            Assert.assertNull(graphDb.getVertex(v1.getId()));
+
+            graphDb.commit();
+        } catch (Exception ex) {
+            graphDb.rollback();
+        }
     }
 
     @Test
