@@ -27,6 +27,16 @@ public class GraphPerfTest {
         graphDb = (Neo4jGraph) GraphFactory.open(config);
     }
 
+
+    @Test
+    public void labelTest() {
+        Vertex v1 = graphDb.addVertex(null);
+        v1.setProperty(Neo4jGraph.NODE_GLOBAL_LABEL, "Red");
+        v1.setProperty(Neo4jGraph.NODE_GLOBAL_LABEL, "Green");
+        v1.setProperty(Neo4jGraph.NODE_GLOBAL_LABEL, "Blue");
+        Assert.assertTrue(((Neo4jVertex) v1).getLabels().containsAll(Arrays.asList("Red", "Green", "Blue")));
+    }
+
     @Test
     public void queryTest() {
         try {

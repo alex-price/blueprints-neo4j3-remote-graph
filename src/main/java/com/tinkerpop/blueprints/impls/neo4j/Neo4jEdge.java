@@ -38,22 +38,19 @@ public class Neo4jEdge extends Neo4jElement<Relationship> implements Edge {
     @Override
     public void setProperty(String key, Object value) {
         ElementHelper.validateProperty(this, key, value);
-        String statement = String.format("match ()-[r]->() where id(r) = {id} set r.`%s` = {value}", key);
-        Value params = Values.parameters("id", getId(), "value", Values.value(value));
-        graphDb.withTx().run(statement, params);
-        rawElement = clone(this, key, value);
+        String statement = String.format("match ()-[r]->() where id(r) = {id} set r.`%s` = {value} return r", key);
+        Value params = Values.parameters("id", getId(), "value", value);
+        StatementResult result = graphDb.withTx().run(statement, params);
+        rawElement = result.single().get(0).asRelationship();
     }
 
     @Override
     public Object removeProperty(String key) {
-        Object propValue = null;
-        String statement = String.format("match ()-[r]->() where id(r) = {id} with r, r.`%s` as propValue remove r.`%s` return propValue", key, key);
+        Object propValue = getProperty(key);
+        String statement = String.format("match ()-[r]->() where id(r) = {id} remove r.`%s` return r", key);
         Value params = Values.parameters("id", getId());
         StatementResult result = graphDb.withTx().run(statement, params);
-        if (result.hasNext()) {
-            propValue = result.single().get(0).asObject();
-            rawElement = clone(this, key);
-        }
+        rawElement = result.single().get(0).asRelationship();
         return propValue;
     }
 

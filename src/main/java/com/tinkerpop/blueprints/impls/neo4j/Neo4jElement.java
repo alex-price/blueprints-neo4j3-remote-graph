@@ -1,6 +1,5 @@
 package com.tinkerpop.blueprints.impls.neo4j;
 
-
 import com.tinkerpop.blueprints.Element;
 import org.neo4j.driver.internal.InternalNode;
 import org.neo4j.driver.internal.InternalRelationship;

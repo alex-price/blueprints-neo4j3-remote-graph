@@ -60,17 +60,17 @@ public class Neo4jGraph implements KeyIndexableGraph, MetaGraph<Session>, Transa
         T wrap(S rawElement);
     }
 
-    public interface VertexWrapper<V extends Vertex> extends ElementWrapper<V, Node>{
+    public interface VertexWrapper<V extends Vertex> extends ElementWrapper<V, Node> {
     }
 
-    public interface EdgeWrapper<E extends Edge> extends ElementWrapper<E, Relationship>{
+    public interface EdgeWrapper<E extends Edge> extends ElementWrapper<E, Relationship> {
     }
 
-    private static VertexWrapper<Neo4jVertex> createDefaultVertexWrapper(final Neo4jGraph graph){
+    private static VertexWrapper<Neo4jVertex> createDefaultVertexWrapper(final Neo4jGraph graph) {
         return rawVertex -> new Neo4jVertex(rawVertex, graph);
     }
 
-    private static EdgeWrapper<Neo4jEdge> createDefaultEdgeWrapper(final Neo4jGraph graph){
+    private static EdgeWrapper<Neo4jEdge> createDefaultEdgeWrapper(final Neo4jGraph graph) {
         return rawEdge -> new Neo4jEdge(rawEdge, graph);
     }
 
@@ -132,6 +132,7 @@ public class Neo4jGraph implements KeyIndexableGraph, MetaGraph<Session>, Transa
     // KeyIndexableGraph
 
     public static final String NODE_GLOBAL_INDEX = "INDEXED";
+    public static final String NODE_GLOBAL_LABEL = "uie_node_type";
 
     private Set<String> indices = new HashSet();
 
@@ -166,18 +167,28 @@ public class Neo4jGraph implements KeyIndexableGraph, MetaGraph<Session>, Transa
 
     @Override
     public void stopTransaction(Conclusion conclusion) {
-        throw new UnsupportedOperationException();
+        if (conclusion == Conclusion.FAILURE) {
+            rollback();
+        } else {
+            commit();
+        }
     }
 
     @Override
     public void commit() {
-        tx.ifPresent(tx -> { tx.success(); tx.close(); });
+        tx.ifPresent(tx -> {
+            tx.success();
+            tx.close();
+        });
         tx = Optional.empty();
     }
 
     @Override
     public void rollback() {
-        tx.ifPresent(tx -> { tx.failure(); tx.close(); });
+        tx.ifPresent(tx -> {
+            tx.failure();
+            tx.close();
+        });
         tx = Optional.empty();
     }
 
@@ -249,7 +260,7 @@ public class Neo4jGraph implements KeyIndexableGraph, MetaGraph<Session>, Transa
 
     @Override
     public void removeEdge(Edge edge) {
-        withTx().run("match ()-[r]-() where id(r) = {id} delete r", Values.parameters("id", edge.getId()));
+        withTx().run("match ()-[r]->() where id(r) = {id} delete r", Values.parameters("id", edge.getId()));
     }
 
     @Override
