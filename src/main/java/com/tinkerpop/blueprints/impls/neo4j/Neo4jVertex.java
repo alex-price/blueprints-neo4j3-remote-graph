@@ -86,13 +86,13 @@ public class Neo4jVertex extends Neo4jElement<Node> implements Vertex {
     public void setProperty(String key, Object value) {
         ElementHelper.validateProperty(this, key, value);
         if (Neo4jGraph.NODE_GLOBAL_LABEL.equals(key)) {
+            // Apply magic property as label
             addLabel(value.toString());
-        } else {
-            String statement = String.format("match (n) where id(n) = {id} set n.`%s` = {value} return n", key);
-            Value params = Values.parameters("id", getId(), "value", Values.value(value));
-            StatementResult result = graphDb.withTx().run(statement, params);
-            rawElement = result.single().get(0).asNode();
         }
+        String statement = String.format("match (n) where id(n) = {id} set n.`%s` = {value} return n", key);
+        Value params = Values.parameters("id", getId(), "value", Values.value(value));
+        StatementResult result = graphDb.withTx().run(statement, params);
+        rawElement = result.single().get(0).asNode();
     }
 
     @Override

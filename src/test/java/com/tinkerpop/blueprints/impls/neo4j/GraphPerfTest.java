@@ -34,6 +34,9 @@ public class GraphPerfTest {
         v1.setProperty(Neo4jGraph.NODE_GLOBAL_LABEL, "Red");
         v1.setProperty(Neo4jGraph.NODE_GLOBAL_LABEL, "Green");
         v1.setProperty(Neo4jGraph.NODE_GLOBAL_LABEL, "Blue");
+        // Verify property holds last value
+        Assert.assertEquals("Blue", v1.getProperty(Neo4jGraph.NODE_GLOBAL_LABEL));
+        // Verify all labels are set
         Assert.assertTrue(((Neo4jVertex) v1).getLabels().containsAll(Arrays.asList("Red", "Green", "Blue")));
     }
 
