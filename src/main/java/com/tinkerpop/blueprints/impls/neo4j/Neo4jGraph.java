@@ -285,8 +285,14 @@ public class Neo4jGraph implements KeyIndexableGraph, MetaGraph<Session>, Transa
     @Override
     public void shutdown() {
         commit();
-//        session.close();
-//        driver.close();
+        if ( session != null )
+        {
+            session.close();
+        }
+        if ( driver != null )
+        {
+            driver.close();
+        }
     }
 
 }

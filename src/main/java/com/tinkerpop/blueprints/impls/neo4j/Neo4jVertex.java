@@ -39,12 +39,12 @@ public class Neo4jVertex extends Neo4jElement<Node> implements Vertex {
             sb.append(">");
         }
         sb.append("() where id(n) = {id} ");
-        if (labels != null && labels.length > 0) {
+        if (labels.length > 0) {
             sb.append("and type(r) in {relTypes} ");
         }
         sb.append(" return r");
 
-        Value params = Values.parameters("id", getId(), "relTypes", Values.value(labels));
+        Value params = Values.parameters("id", getId(), "relTypes", labels);
 
         StatementResult result = graphDb.withTx().run(sb.toString(), params);
         return new EdgeIterable(result.list(record -> record.get(0).asRelationship()), graphDb);
@@ -64,7 +64,11 @@ public class Neo4jVertex extends Neo4jElement<Node> implements Vertex {
         if (direction == Direction.OUT) {
             sb.append(">");
         }
-        sb.append("(b) where id(a) = {id} and type(r) in {relTypes} return b");
+        sb.append("(b) where id(a) = {id} ");
+        if (labels.length > 0) {
+            sb.append("and type(r) in {relTypes} ");
+        }
+        sb.append("return b");
 
         Value params = Values.parameters("id", getId(), "relTypes", labels);
 
@@ -127,6 +131,23 @@ public class Neo4jVertex extends Neo4jElement<Node> implements Vertex {
         String statement = String.format("match (n) where id(n) = {id} remove n:`%s`", label);
         Value params = Values.parameters("id", getId());
         graphDb.withTx().run(statement, params);
+    }
+
+    public boolean equals(Object other) {
+        if (!(other instanceof Vertex)) {
+            return false;
+        }
+
+        if (getId() == null) {
+            return false;
+        }
+
+        final Vertex otherVertex = (Vertex) other;
+        return (getId().equals(otherVertex.getId()));
+    }
+
+    public String toString() {
+        return ("Vertex(" + getId() + ")");
     }
 
 }
